@@ -11,7 +11,7 @@ UPLOAD_FOLDER = 'static/uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # IA
-model = tf.keras.models.load_model("modelo_covid.h5")
+model = tf.keras.models.load_model("dataset.ipynb")
 classes = ['COVID', 'Lung_Opacity', 'Normal', 'Viral Pneumonia']
 
 # Função para conectar ao banco
@@ -98,3 +98,4 @@ def analisar():
 
 if __name__ == '__main__':
     app.run(debug=True) 
+

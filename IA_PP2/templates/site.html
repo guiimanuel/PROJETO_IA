@@ -1,11 +1,21 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-br">
 <head>
-    <title>Bem-vindo</title>
+  <meta charset="UTF-8">
+  <title>Painel da IA</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <h2>Olá, {{ nome }} 👋</h2>
-    <p>Você está logado no sistema!</p>
-    <a href="{{ url_for('logout') }}">Sair</a>
+  <div class="container">
+    <h1>Bem-vindo, {{ usuario }}!</h1>
+    <p>Envie uma imagem de raio-X para análise:</p>
+
+    <form action="/analisar" method="post" enctype="multipart/form-data">
+      <input type="file" name="imagem" accept="image/*" required><br>
+      <button type="submit">Analisar</button>
+    </form>
+
+    <p><a href="/logout">Sair</a></p>
+  </div>
 </body>
 </html>

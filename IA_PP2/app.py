@@ -1,59 +1,27 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash
+from flask import Flask, render_template, request, redirect, url_for, session
 import sqlite3
-import hashlib
+import tensorflow as tf
+from tensorflow.keras.preprocessing import image
+import numpy as np
+import os
 
 app = Flask(__name__)
-app.secret_key = "chave-secreta-supersegura"  # Troque isso em produção!
+app.secret_key = 'pp2amiguinhos'  # para controlar sessões
+UPLOAD_FOLDER = 'static/uploads'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# === Funções auxiliares ===
-def get_db_connection():
-    conn = sqlite3.connect("login.db")
-    conn.row_factory = sqlite3.Row
-    return conn
+# IA
+model = tf.keras.models.load_model("modelo_covid.h5")
+classes = ['COVID', 'Lung_Opacity', 'Normal', 'Viral Pneumonia']
 
-def criar_tabela():
-    conn = get_db_connection()
-    conn.execute("""
-    CREATE TABLE IF NOT EXISTS usuarios (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nome TEXT NOT NULL,
-        email TEXT NOT NULL UNIQUE,
-        senha_hash TEXT NOT NULL
-    )
-    """)
-    conn.commit()
-    conn.close()
+# Função para conectar ao banco
+def conectar():
+    return sqlite3.connect('login.db')
 
-def hash_senha(senha):
-    return hashlib.sha256(senha.encode()).hexdigest()
+# ---------- ROTAS ----------
 
-# === Rotas ===
 @app.route('/')
-def site():
-    if "usuario" in session:
-        return render_template('site.html', nome=session["usuario"])
-    return redirect(url_for('login'))
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        email = request.form['email']
-        senha = request.form['senha']
-        senha_hash = hash_senha(senha)
-
-        conn = get_db_connection()
-        user = conn.execute(
-            "SELECT * FROM usuarios WHERE email = ? AND senha_hash = ?",
-            (email, senha_hash)
-        ).fetchone()
-        conn.close()
-
-        if user:
-            session["usuario"] = user["nome"]
-            flash("Login realizado com sucesso!", "success")
-            return redirect(url_for('site'))
-        else:
-            flash("E-mail ou senha incorretos!", "danger")
+def index():
     return render_template('login.html')
 
 @app.route('/cadastro', methods=['GET', 'POST'])
@@ -62,28 +30,71 @@ def cadastro():
         nome = request.form['nome']
         email = request.form['email']
         senha = request.form['senha']
-        senha_hash = hash_senha(senha)
-
+        conn = conectar()
+        cursor = conn.cursor()
         try:
-            conn = get_db_connection()
-            conn.execute(
-                "INSERT INTO usuarios (nome, email, senha_hash) VALUES (?, ?, ?)",
-                (nome, email, senha_hash)
-            )
+            cursor.execute("INSERT INTO usuarios (nome, email, senha) VALUES (?, ?, ?)", (nome, email, senha))
             conn.commit()
+            msg = "Usuário cadastrado com sucesso!"
+            return render_template('login.html', msg=msg)
+        except:
+            msg = "Erro: e-mail já cadastrado!"
+            return render_template('cadastro.html', msg=msg)
+        finally:
             conn.close()
-            flash("Usuário cadastrado com sucesso!", "success")
-            return redirect(url_for('login'))
-        except sqlite3.IntegrityError:
-            flash("E-mail já cadastrado!", "danger")
     return render_template('cadastro.html')
+
+@app.route('/login', methods=['POST'])
+def login():
+    email = request.form['email']
+    senha = request.form['senha']
+    conn = conectar()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM usuarios WHERE email=? AND senha=?", (email, senha))
+    usuario = cursor.fetchone()
+    conn.close()
+
+    if usuario:
+        session['usuario'] = usuario[1]
+        return redirect(url_for('site'))
+    else:
+        return render_template('login.html', msg="E-mail ou senha incorretos")
+
+@app.route('/site')
+def site():
+    if 'usuario' not in session:
+        return redirect(url_for('index'))
+    return render_template('site.html', usuario=session['usuario'])
 
 @app.route('/logout')
 def logout():
-    session.pop("usuario", None)
-    flash("Logout realizado com sucesso!", "info")
-    return redirect(url_for('login'))
+    session.clear()
+    return redirect(url_for('index'))
 
-if __name__ == "__main__":
-    criar_tabela()
-    app.run(debug=True)
+# ---------- UPLOAD E ANÁLISE ----------
+
+@app.route('/analisar', methods=['POST'])
+def analisar():
+    if 'usuario' not in session:
+        return redirect(url_for('index'))
+
+    arquivo = request.files['imagem']
+    caminho = os.path.join(app.config['UPLOAD_FOLDER'], arquivo.filename)
+    arquivo.save(caminho)
+
+    img = image.load_img(caminho, target_size=(224, 224))
+    img_array = np.expand_dims(image.img_to_array(img) / 255.0, axis=0)
+
+    pred = model.predict(img_array)[0]
+    idx = np.argmax(pred)
+    resultado = classes[idx]
+    confianca = round(float(pred[idx]) * 100, 2)
+
+    return render_template('resultado.html',
+                           imagem=arquivo.filename,
+                           resultado=resultado,
+                           confianca=confianca,
+                           usuario=session['usuario'])
+
+if __name__ == '__main__':
+    app.run(debug=True) 
